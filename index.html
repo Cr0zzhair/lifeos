@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>LIFE OS v3</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ═══ Firebase SDK (modular CDN) ═══ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ╔══════════════════════════════════════════════╗
+// ║  GANTI CONFIG INI DENGAN PUNYAMU SENDIRI!    ║
+// ║  Lihat instruksi di bawah file ini           ║
+// ╚══════════════════════════════════════════════╝
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDivcGl-uJmV1MCPLrDy9UU_psO7PGBD0k",
+  authDomain: "gamifly-os.firebaseapp.com",
+  databaseURL: "https://gamifly-os-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "gamifly-os",
+  storageBucket: "gamifly-os.firebasestorage.app",
+  messagingSenderId: "1088428246622",
+  appId: "1:1088428246622:web:4e4f907d2ce75c03ce56cf",
+  measurementId: "G-873HJNERXF"
+};
+
+// Simple user ID (kamu bisa upgrade ke Firebase Auth nanti)
+const USER_ID = "user1";
+
+let db = null;
+let firebaseReady = false;
+
+try {
+  if (!FIREBASE_CONFIG.apiKey.startsWith("YOUR_")) {
+    const app = initializeApp(FIREBASE_CONFIG);
+    db = getDatabase(app);
+    firebaseReady = true;
+
+    // Listen for realtime changes from other devices
+    const stateRef = ref(db, `lifeos/${USER_ID}/state`);
+    onValue(stateRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && window._lifeos) {
+        const remote = JSON.parse(data);
+        const remoteXP = Object.values(remote.xp || {}).reduce((a, b) => a + b, 0);
+        const localXP = Object.values(window._lifeos.xp || {}).reduce((a, b) => a + b, 0);
+        // Merge: higher XP wins (simple conflict resolution)
+        if (remoteXP > localXP) {
+          window._lifeos = { ...window._defaultState, ...remote };
+          localStorage.setItem("lifeos_v3", data);
+          window._render?.();
+          showToast("🔄 Synced from another device!", "#22c55e");
+        }
+      }
+    });
+
+    window._firebaseSave = (state) => {
+      set(ref(db, `lifeos/${USER_ID}/state`), JSON.stringify(state));
+    };
+  }
+} catch (e) {
+  console.warn("Firebase not configured:", e);
+}
+
+window._firebaseReady = firebaseReady;
+window._syncStatus = firebaseReady ? "cloud" : "local";
+document.getElementById("sync-badge")?.click(); // trigger re-render
+</script>
+
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #12121a;
+    --bg3: #1a1a25;
+    --border: #252530;
+    --border-light: #2a2a38;
+    --text: #e8e8ef;
+    --text2: #888899;
+    --text3: #555566;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --radius: 10px;
+    --font: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body { font-family: var(--font); color: var(--text); max-width: 640px; margin: 0 auto; padding: 12px 14px 80px; min-height: 100vh; background: var(--bg); }
+  ::-webkit-scrollbar { display: none; }
+  button { font-family: var(--font); cursor: pointer; }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(.95); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+  @keyframes checkPop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 8px var(--glow-color); } 50% { box-shadow: 0 0 20px var(--glow-color); } }
+
+  .quest-item { transition: transform .1s, opacity .15s; }
+  .quest-item:active { transform: scale(.985); }
+
+  /* Toast */
+  #toast {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 16px; font-size: 12px; font-weight: 500; z-index: 999; max-width: 85vw;
+    line-height: 1.5; text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity .25s;
+  }
+  #toast.on { opacity: 1; animation: toastIn .25s ease; }
+
+  /* PWA install banner */
+  #pwa-banner {
+    display: none; border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px;
+    border: 1px dashed var(--purple); background: #8b5cf611; font-size: 11px; color: var(--purple);
+    text-align: center; cursor: pointer; animation: slideUp .3s ease;
+  }
+  #pwa-banner:hover { background: #8b5cf622; }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="app" style="animation: fadeIn .4s ease">
+  <!-- Rendered by JS -->
+  <div style="text-align:center;padding:40vh 0;color:var(--text3)">
+    <div style="font-size:28px;animation:pulse 1.5s infinite">⚡</div>
+    <div style="font-size:11px;letter-spacing:2px;margin-top:8px">LOADING LIFE OS...</div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════
+   LIFE OS v3.0 — Standalone Edition
+   Vanilla JS, Firebase Sync, PWA Ready
+   ═══════════════════════════════════════════ */
+
+/* ────── DATA ────── */
+const CATS = {
+  knowledge: { name:'Knowledge', color:'#ef4444', icon:'📚', quests:[
+    {id:'k0',name:'Baca 1 paragraf apa saja',desc:'60 detik. Buku, artikel, docs.',xp:5,tier:'min'},
+    {id:'k1',name:'Baca & catat 1 konsep (15 mnt)',desc:'Tulis 3 poin kunci setelah baca.',xp:15,tier:'normal'},
+    {id:'k2',name:'Practice coding 30 menit',desc:'LeetCode, CTF, project kecil, tutorial.',xp:20,tier:'normal'},
+    {id:'k3',name:'Deep work session (45 mnt)',desc:'HP silent. 1 topik. Output: ringkasan 5 poin.',xp:35,tier:'challenge'},
+  ]},
+  speech: { name:'Speech', color:'#8b5cf6', icon:'🎤', quests:[
+    {id:'s0',name:'Baca 1 kalimat Inggris keras-keras',desc:'30 detik. Dari artikel apa saja.',xp:5,tier:'min'},
+    {id:'s1',name:'Tulis 1 paragraf teknis (EN)',desc:'Jelaskan apa yang kamu pelajari hari ini.',xp:15,tier:'normal'},
+    {id:'s2',name:'Baca artikel teknis 5 menit',desc:'Fokus pronunciation & struktur kalimat.',xp:10,tier:'normal'},
+    {id:'s3',name:'Rekam diri jelasin 1 topik (2 mnt)',desc:'Record, tonton, hapus kalau mau.',xp:30,tier:'challenge'},
+  ]},
+  health: { name:'Health', color:'#f59e0b', icon:'💪', quests:[
+    {id:'h0',name:'10 push-up / jalan 3 menit',desc:'Langsung sekarang. Berdiri dan lakukan.',xp:5,tier:'min'},
+    {id:'h1',name:'Olahraga 20 menit',desc:'Push-up, lari, gym — bikin berkeringat.',xp:15,tier:'normal'},
+    {id:'h2',name:'Minum 6 gelas + tidur on time',desc:'6 gelas air, tidur sebelum 23:30.',xp:10,tier:'normal'},
+    {id:'h3',name:'Full workout + tidur 7-8 jam',desc:'45 mnt olahraga + komitmen tidur cukup.',xp:35,tier:'challenge'},
+  ]},
+  purpose: { name:'Purpose', color:'#3b82f6', icon:'🎯', quests:[
+    {id:'p0',name:'Tulis 1 hal yang kamu syukuri',desc:'30 detik di notes HP. Satu hal saja.',xp:5,tier:'min'},
+    {id:'p1',name:'Set 1 tujuan konkret hari ini',desc:"Bukan 'belajar'. Contoh: 'Selesaikan bab 3'.",xp:10,tier:'normal'},
+    {id:'p2',name:'Journaling 5 menit',desc:'Apa berjalan baik? Apa ingin diubah?',xp:15,tier:'normal'},
+    {id:'p3',name:'Weekly review + planning (30 mnt)',desc:'Minggu malam. Review & plan minggu depan.',xp:35,tier:'challenge'},
+  ]},
+  finances: { name:'Finances', color:'#22c55e', icon:'💰', quests:[
+    {id:'f0',name:'Catat 1 pengeluaran hari ini',desc:'20 detik. Tulis nominal + kategori.',xp:5,tier:'min'},
+    {id:'f1',name:'Catat semua pengeluaran',desc:'Total semua yang keluar hari ini.',xp:15,tier:'normal'},
+    {id:'f2',name:'Cek saldo & bandingkan budget',desc:'Apakah sesuai rencana?',xp:10,tier:'normal'},
+    {id:'f3',name:'Pelajari 1 konsep finansial',desc:'Compound interest, ETF, emergency fund.',xp:25,tier:'challenge'},
+  ]}
+};
+
+const XPL = 100;
+const DAY_NAMES = ["Min","Sen","Sel","Rab","Kam","Jum","Sab"];
+const TIER_COL = { min:'#22c55e', normal:'#3b82f6', challenge:'#f59e0b' };
+const TIER_LBL = { min:'MINIMUM', normal:'NORMAL', challenge:'CHALLENGE' };
+const E_TIERS = { lazy:['min'], normal:['min','normal'], power:['min','normal','challenge'] };
+const E_MODES = [
+  {id:'lazy',label:'😴 Lazy',sub:'Min quests only'},
+  {id:'normal',label:'😊 Normal',sub:'Standard quests'},
+  {id:'power',label:'🚀 Power',sub:'All challenges'}
+];
+const catKeys = Object.keys(CATS);
+
+/* ────── UTILS ────── */
+const td = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const ago = (n) => { const d=new Date(); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const lv = (k) => Math.floor((S.xp[k]||0)/XPL)+1;
+const xpp = (k) => (S.xp[k]||0)%XPL;
+const minDone = (k) => { const c=S.checked[td()]||{}; const mq=CATS[k].quests.find(q=>q.tier==='min'); return mq&&!!c[mq.id]; };
+const visQ = (k) => CATS[k].quests.filter(q=>E_TIERS[S.energyMode].includes(q.tier));
+const cntDone = (k) => { const c=S.checked[td()]||{}; return visQ(k).filter(q=>c[q.id]).length; };
+const minAllCnt = () => catKeys.filter(k=>minDone(k)).length;
+
+/* ────── DEFAULT STATE ────── */
+window._defaultState = {
+  xp:{knowledge:0,speech:0,health:0,purpose:0,finances:0},
+  checked:{}, streak:{knowledge:0,speech:0,health:0,purpose:0,finances:0},
+  lastDone:{}, hist:{},
+  shields:{knowledge:0,speech:0,health:0,purpose:0,finances:0},
+  energyMode:'normal', lastEnergyDate:null,
+  noZeroStreak:0, lastNoZeroDate:null
+};
+let S = {...window._defaultState};
+let cur = 'knowledge';
+let viewMode = 'quests'; // 'quests' | 'stats'
+
+/* ────── STORAGE ────── */
+function save() {
+  const data = JSON.stringify(S);
+  localStorage.setItem('lifeos_v3', data);
+  // Cloud sync if Firebase is ready
+  if (window._firebaseSave) window._firebaseSave(S);
+  updateSyncBadge();
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem('lifeos_v3');
+    if (raw) S = { ..._defaultState, ...JSON.parse(raw) };
+  } catch(e) {}
+  window._lifeos = S;
+}
+
+function updateSyncBadge() {
+  const el = document.getElementById('sync-badge');
+  if (!el) return;
+  const isCloud = window._firebaseReady;
+  el.textContent = isCloud ? '☁️ Cloud Synced' : '📱 Local Only';
+  el.style.color = isCloud ? '#22c55e' : 'var(--text3)';
+}
+
+/* ────── TOAST ────── */
+let _tt;
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.borderColor = color; t.style.color = color;
+  t.classList.add('on'); clearTimeout(_tt);
+  _tt = setTimeout(() => t.classList.remove('on'), 2800);
+}
+window.showToast = showToast;
+
+/* ────── ACTIONS ────── */
+function sw(k) { cur=k; render(); }
+
+function tog(k, id) {
+  const t = td();
+  if (!S.checked[t]) S.checked[t] = {};
+  const was = !!S.checked[t][id];
+  const q = CATS[k].quests.find(x=>x.id===id);
+
+  if (!was) {
+    S.checked[t][id] = true;
+    const oldLv = lv(k);
+    S.xp[k] = (S.xp[k]||0) + q.xp;
+    if (lv(k) > oldLv) {
+      S.shields[k] = Math.min((S.shields[k]||0)+1, 5);
+      showToast(`🎉 LEVEL UP! ${CATS[k].name} Lv${lv(k)}! +1 Shield`, CATS[k].color);
+    } else {
+      showToast(`+${q.xp} XP — ${q.name}`, CATS[k].color);
+    }
+  } else {
+    delete S.checked[t][id];
+    S.xp[k] = Math.max(0, (S.xp[k]||0) - q.xp);
+  }
+
+  if (!S.hist[t]) S.hist[t] = {};
+  S.hist[t][k] = CATS[k].quests.filter(q2=>(S.checked[t]||{})[q2.id]).length;
+
+  updStreak(k);
+  checkNoZero();
+  save();
+  render();
+}
+
+function updStreak(k) {
+  const t=td(), y=ago(1);
+  if (!minDone(k)) return;
+  const last = S.lastDone[k];
+  if (last === t) return;
+
+  if (last === y) {
+    S.streak[k] = (S.streak[k]||0)+1;
+    if (S.streak[k]%7===0) {
+      S.shields[k] = Math.min((S.shields[k]||0)+1,5);
+      setTimeout(()=>showToast(`🛡️ ${S.streak[k]}-day streak! +1 Shield ${CATS[k].name}!`,CATS[k].color),300);
+    }
+  } else if (last) {
+    const gap = Math.floor((new Date(t)-new Date(last))/86400000);
+    if (gap===2 && (S.shields[k]||0)>0) {
+      S.shields[k]--;
+      S.streak[k] = (S.streak[k]||0)+1;
+      setTimeout(()=>showToast(`🛡️ Shield dipakai! Streak ${CATS[k].name} selamat!`,CATS[k].color),300);
+    } else {
+      const old = S.streak[k]||0;
+      if (old>=5) {
+        const bonus = Math.min(Math.floor(old*1.5),30);
+        S.xp[k] = (S.xp[k]||0)+bonus;
+        setTimeout(()=>showToast(`💪 Welcome back! +${bonus} Comeback XP!`,CATS[k].color),300);
+      }
+      S.streak[k] = 1;
+    }
+  } else {
+    S.streak[k] = 1;
+  }
+  S.lastDone[k] = t;
+}
+
+function checkNoZero() {
+  const t = td();
+  if (S.lastNoZeroDate===t) return;
+  if (!catKeys.every(k=>minDone(k))) return;
+  const wasC = S.lastNoZeroDate===ago(1);
+  S.lastNoZeroDate = t;
+  S.noZeroStreak = wasC ? (S.noZeroStreak||0)+1 : 1;
+  S.xp[cur] = (S.xp[cur]||0)+10;
+  setTimeout(()=>showToast(`🌟 No Zero Day! +10 XP Bonus (hari ke-${S.noZeroStreak})`, '#22c55e'),400);
+}
+
+function setEnergy(mode) {
+  S.energyMode = mode; S.lastEnergyDate = td();
+  save(); render();
+}
+
+function resetTree(k) {
+  if (!confirm(`Reset semua progress ${CATS[k].name}?\nXP, streak, dan shields akan hilang.`)) return;
+  S.xp[k]=0; S.streak[k]=0; S.lastDone[k]=null; S.shields[k]=0;
+  const c = S.checked[td()]||{};
+  CATS[k].quests.forEach(q=>delete c[q.id]);
+  if (!S.hist[td()]) S.hist[td()]={};
+  S.hist[td()][k]=0;
+  save(); render();
+}
+
+function toggleView() {
+  viewMode = viewMode==='quests' ? 'stats' : 'quests';
+  render();
+}
+
+/* ────── RENDER ────── */
+function render() {
+  window._lifeos = S;
+  const cat = CATS[cur];
+  const t = td();
+  const checked = S.checked[t]||{};
+  const level = lv(cur);
+  const xp = xpp(cur);
+  const streak = S.streak[cur]||0;
+  const shields = S.shields[cur]||0;
+  const mac = minAllCnt();
+  const allMin = mac===catKeys.length;
+
+  const dateStr = new Date().toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'}).toUpperCase();
+
+  // Build HTML
+  let html = '';
+
+  // ── Header ──
+  html += `
+    <div style="text-align:center;margin-bottom:14px">
+      <div style="font-size:20px;font-weight:700;letter-spacing:4px;color:var(--text)">
+        LIFE OS <span style="font-size:10px;opacity:.4;letter-spacing:1px;font-weight:400;vertical-align:middle">v3.0</span>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px;letter-spacing:1px">${dateStr}</div>
+      <div id="sync-badge" style="display:inline-block;margin-top:6px;font-size:9px;color:var(--text3);letter-spacing:.5px;padding:3px 8px;border-radius:6px;cursor:pointer"
+           onclick="location.reload()">
+        ${window._firebaseReady ? '☁️ Cloud Synced' : '📱 Local Only'} · tap to refresh
+      </div>
+    </div>`;
+
+  // ── PWA Install Banner ──
+  html += `<div id="pwa-banner" onclick="installPWA()">📲 Tap untuk install Life OS ke home screen</div>`;
+
+  // ── No Zero Day ──
+  const nzCol = allMin ? '#22c55e' : mac>=3 ? '#f59e0b' : '#ef4444';
+  const nzIcon = mac===0 ? '⚠️' : mac<catKeys.length ? '⚡' : '✅';
+  const nzMsg = allMin ? `Hari ini nggak sia-sia!${S.noZeroStreak>1?` (${S.noZeroStreak} hari)`:''}` : 'Selesaikan minimum di setiap kategori';
+  html += `
+    <div style="border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;
+      justify-content:space-between;font-size:11px;font-weight:500;border:1px solid ${nzCol};background:${nzCol}11;animation:slideUp .3s ease">
+      <span style="color:${nzCol}">${nzIcon} NO ZERO DAY: ${mac}/${catKeys.length}</span>
+      <span style="font-size:9px;color:var(--text3);max-width:55%;text-align:right">${nzMsg}</span>
+    </div>`;
+
+  // ── Energy Mode ──
+  html += `<div style="display:flex;gap:5px;margin-bottom:10px">`;
+  E_MODES.forEach(m => {
+    const a = S.energyMode===m.id;
+    html += `<button onclick="setEnergy('${m.id}')" style="flex:1;padding:8px 4px;border-radius:var(--radius);
+      border:1.5px solid ${a?'var(--purple)':'var(--border)'};background:${a?'var(--purple)':'transparent'};
+      font-size:11px;font-weight:500;text-align:center;color:${a?'white':'var(--text2)'};transition:all .15s;line-height:1.3">
+      ${m.label}<span style="display:block;font-size:9px;opacity:.65;margin-top:2px">${m.sub}</span></button>`;
+  });
+  html += `</div>`;
+
+  // ── Overview Grid ──
+  html += `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px">`;
+  catKeys.forEach(k => {
+    const tr = CATS[k]; const md = minDone(k); const isA = cur===k;
+    const sh = S.shields[k]||0;
+    html += `<button onclick="sw('${k}')" style="border-radius:var(--radius);
+      border:1.5px solid ${isA?tr.color:'var(--border)'};padding:8px 2px;text-align:center;
+      background:${isA?tr.color+'11':'var(--bg2)'};position:relative;transition:all .15s">
+      ${sh>0?`<span style="position:absolute;top:2px;right:3px;font-size:8px">🛡️${sh}</span>`:''}
+      <div style="font-size:16px;line-height:1">${md?'✅':tr.icon}</div>
+      <div style="font-size:13px;font-weight:600;color:${tr.color};margin-top:2px">Lv${lv(k)}</div>
+      <div style="font-size:9px;color:var(--text2);margin-top:1px">${cntDone(k)}/${visQ(k).length}</div>
+    </button>`;
+  });
+  html += `</div>`;
+
+  // ── Tabs ──
+  html += `<div style="display:flex;gap:5px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none">`;
+  catKeys.forEach(k => {
+    const tr=CATS[k]; const isA=cur===k;
+    html += `<button onclick="sw('${k}')" style="padding:7px 12px;border-radius:var(--radius);
+      border:1.5px solid ${tr.color};background:${isA?tr.color:'transparent'};font-size:11px;font-weight:500;
+      white-space:nowrap;color:${isA?'white':tr.color};transition:all .15s">${tr.icon} ${tr.name}</button>`;
+  });
+  html += `<button onclick="toggleView()" style="padding:7px 12px;border-radius:var(--radius);
+    border:1.5px solid var(--border);background:${viewMode==='stats'?'var(--border)':'transparent'};
+    font-size:11px;font-weight:500;white-space:nowrap;color:${viewMode==='stats'?'white':'var(--text2)'};transition:all .15s">
+    📊 Stats</button>`;
+  html += `</div>`;
+
+  // ── Main Panel ──
+  html += `<div style="border-radius:12px;border:0.5px solid var(--border);background:var(--bg2);padding:14px;animation:slideUp .3s ease">`;
+
+  if (viewMode === 'stats') {
+    // ── STATS VIEW ──
+    const totalXP = Object.values(S.xp).reduce((a,b)=>a+b,0);
+    let weekXP=0, weekComp=0;
+    catKeys.forEach(k => {
+      for(let i=0;i<7;i++){
+        const dt=ago(i); const dc=S.checked[dt]||{};
+        CATS[k].quests.forEach(q=>{ if(dc[q.id]) weekXP+=q.xp; });
+        weekComp += (S.hist[dt]||{})[k]||0;
+      }
+    });
+    const bestStreak = Math.max(...catKeys.map(k=>S.streak[k]||0));
+
+    html += `
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:10px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Weekly Dashboard</div>
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${totalXP} XP</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Total accumulated</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px">
+        ${[{l:'WEEK XP',v:weekXP,c:'var(--purple)'},{l:'QUESTS DONE',v:weekComp,c:'var(--green)'},{l:'BEST STREAK',v:bestStreak+'🔥',c:'var(--amber)'}]
+          .map(s=>`<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center">
+            <div style="font-size:18px;font-weight:600;color:${s.c}">${s.v}</div>
+            <div style="font-size:8px;color:var(--text2);margin-top:3px;letter-spacing:1px">${s.l}</div>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:10px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Per Category</div>`;
+
+    catKeys.forEach(k => {
+      const tr=CATS[k]; const l=lv(k); const xpP=xpp(k);
+      html += `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+          <span style="font-size:18px">${tr.icon}</span>
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:500;color:${tr.color}">${tr.name} <span style="font-size:10px;opacity:.6">Lv${l}</span></div>
+            <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden">
+              <div style="width:${xpP}%;height:100%;background:${tr.color};border-radius:2px;transition:width .5s"></div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:12px;font-weight:600;color:var(--text)">${S.streak[k]||0}🔥</div>
+            <div style="font-size:8px;color:var(--text2)">${S.shields[k]||0} 🛡️</div>
+          </div>
+        </div>`;
+    });
+    html += `<div style="text-align:center;margin-top:14px;font-size:9px;color:var(--text3)">
+      ${window._firebaseReady ? '☁️ Cloud sync active across devices' : '📱 Activate Firebase for cross-device sync'}
+    </div>`;
+
+  } else {
+    // ── QUESTS VIEW ──
+    html += `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:21px;background:${cat.color}22;flex-shrink:0">${cat.icon}</div>
+        <div style="flex:1">
+          <div style="font-size:17px;font-weight:600;color:${cat.color};letter-spacing:.5px">${cat.name}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:1px">Level ${level} · ${S.xp[cur]||0} XP total</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;min-height:16px;line-height:1">${shields>0?'🛡️'.repeat(Math.min(shields,5)):'—'}</div>
+          <div style="font-size:9px;color:var(--text2);letter-spacing:.5px;margin-top:1px">SHIELDS</div>
+        </div>
+      </div>`;
+
+    // XP Bar
+    html += `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:4px">
+          <span>Progress ke Level ${level+1}</span><span>${xp} / ${XPL} XP</span>
+        </div>
+        <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden">
+          <div style="width:${xp}%;height:100%;background:${cat.color};border-radius:4px;transition:width .5s ease"></div>
+        </div>
+      </div>`;
+
+    // Stats row
+    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:12px">`;
+    [{v:level,l:'Level'},{v:streak+'🔥',l:'Streak'},{v:shields+'🛡️',l:'Shields'},{v:cntDone(cur)+'/'+visQ(cur).length,l:'Hari ini'}].forEach(s => {
+      html += `<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:8px;text-align:center">
+        <div style="font-size:15px;font-weight:500;color:${cat.color}">${s.v}</div>
+        <div style="font-size:8px;color:var(--text2);margin-top:3px;letter-spacing:.5px;text-transform:uppercase">${s.l}</div>
+      </div>`;
+    });
+    html += `</div>`;
+
+    // Section: Quests
+    const modeLabel = {lazy:'Lazy day',normal:'Normal',power:'Power mode'}[S.energyMode];
+    html += `<div style="font-size:10px;font-weight:500;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:7px">
+      Daily Quests <span style="font-size:9px;letter-spacing:0;text-transform:none;opacity:.7;font-weight:400">— ${modeLabel}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">`;
+
+    visQ(cur).forEach(q => {
+      const done = !!checked[q.id];
+      html += `
+        <div class="quest-item" onclick="tog('${cur}','${q.id}')" style="display:flex;align-items:flex-start;gap:9px;padding:10px;
+          border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg);cursor:pointer;
+          opacity:${done?.45:1};position:relative;overflow:hidden">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${TIER_COL[q.tier]}"></div>
+          <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${cat.color};
+            background:${done?cat.color:'transparent'};display:flex;align-items:center;justify-content:center;
+            font-size:11px;color:white;flex-shrink:0;margin-top:2px;transition:all .2s;
+            ${done?'animation:checkPop .3s ease':''}">
+            ${done?'✓':''}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;color:var(--text);line-height:1.3;${done?'text-decoration:line-through':''}">${q.name}</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:3px;line-height:1.5">${q.desc}</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap">
+              <span style="font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600;background:${TIER_COL[q.tier]}22;color:${TIER_COL[q.tier]}">${TIER_LBL[q.tier]}</span>
+              <span style="font-size:9px;font-weight:500;padding:2px 6px;border-radius:8px;background:${cat.color}22;color:${cat.color}">+${q.xp} XP</span>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    // 7-day history
+    html += `<div style="font-size:10px;font-weight:500;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:7px">7 Hari Terakhir</div>
+    <div style="display:flex;gap:3px;margin-bottom:12px">`;
+    for (let i=0;i<7;i++) {
+      const dt = ago(6-i);
+      const dayIdx = new Date(dt+'T00:00:00').getDay();
+      const hv = (S.hist[dt]||{})[cur]||0;
+      const tot = CATS[cur].quests.filter(q=>q.tier!=='challenge').length;
+      const full = hv>=tot, part = hv>0&&!full;
+      const isToday = dt===td();
+      html += `<div style="flex:1;height:22px;border-radius:4px;font-size:8px;display:flex;align-items:center;justify-content:center;
+        border:${isToday?`1.5px solid ${cat.color}`:full?'none':'0.5px solid var(--border)'};
+        background:${full?cat.color:part?cat.color+'44':'var(--bg)'};
+        color:${full?'white':part?cat.color:'var(--text3)'};
+        font-weight:${isToday?700:400};transition:all .2s">${DAY_NAMES[dayIdx]}</div>`;
+    }
+    html += `</div>`;
+
+    // Footer
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <button onclick="resetTree('${cur}')" style="font-size:9px;color:var(--text3);background:none;border:none;text-decoration:underline;padding:2px 0">Reset progress ${cat.name}</button>
+        <span style="font-size:9px;color:var(--text3);font-style:italic">🟢 min · 🔵 normal · 🟠 challenge</span>
+      </div>`;
+  }
+
+  html += `</div>`;
+
+  // Device footer
+  html += `<div style="text-align:center;margin-top:10px;font-size:9px;color:var(--text3);letter-spacing:.5px">
+    LIFE OS v3.0 · ${/Mobi|Android/i.test(navigator.userAgent)?'📱 mobile':'💻 desktop'}
+  </div>`;
+
+  document.getElementById('app').innerHTML = html;
+
+  // Show PWA install banner if applicable
+  if (window._deferredPrompt) {
+    const b = document.getElementById('pwa-banner');
+    if (b) b.style.display = 'block';
+  }
+}
+
+window._render = render;
+
+/* ────── PWA INSTALL ────── */
+let _deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _deferredPrompt = e;
+  window._deferredPrompt = e;
+  const b = document.getElementById('pwa-banner');
+  if (b) b.style.display = 'block';
+});
+
+function installPWA() {
+  if (_deferredPrompt) {
+    _deferredPrompt.prompt();
+    _deferredPrompt.userChoice.then(r => {
+      if (r.outcome === 'accepted') showToast('✅ Life OS installed!', '#22c55e');
+      _deferredPrompt = null;
+      const b = document.getElementById('pwa-banner');
+      if (b) b.style.display = 'none';
+    });
+  }
+}
+
+/* ────── INIT ────── */
+load();
+if (S.lastEnergyDate !== td()) { S.energyMode='normal'; S.lastEnergyDate=td(); }
+render();
+</script>
+</body>
+</html>
