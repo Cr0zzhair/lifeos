@@ -2,7 +2,7 @@
   "name": "LIFE OS",
   "short_name": "LifeOS",
   "description": "Gamified daily quest tracker — No Zero Days",
-  "start_url": "/index.html",
+  "start_url": "/lifeos/",
   "display": "standalone",
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
