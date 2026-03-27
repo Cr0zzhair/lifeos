@@ -11,12 +11,12 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- ═══ Firebase config (dibaca oleh main script) ═══ -->
-<script>
-// ╔══════════════════════════════════════════════╗
-// ║  CONFIG FIREBASE — sudah terpasang           ║
-// ╚══════════════════════════════════════════════╝
-window.FIREBASE_CONFIG = {
+<!-- ═══ Firebase SDK (modular CDN) ═══ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDivcGl-uJmV1MCPLrDy9UU_psO7PGBD0k",
   authDomain: "gamifly-os.firebaseapp.com",
   databaseURL: "https://gamifly-os-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -25,8 +25,44 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "1088428246622",
   appId: "1:1088428246622:web:4e4f907d2ce75c03ce56cf"
 };
-window.USER_ID = "user1";
-window._firebaseReady = false;
+const USER_ID = "user1";
+
+try {
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db  = getDatabase(app);
+
+  window._firebaseReady = true;
+  window._firebaseSave  = (state) =>
+    set(ref(db, `lifeos/${USER_ID}/state`), JSON.stringify(state));
+
+  // Listen perubahan dari device lain
+  onValue(ref(db, `lifeos/${USER_ID}/state`), (snapshot) => {
+    const data = snapshot.val();
+    if (data && window._lifeos) {
+      try {
+        const remote   = JSON.parse(data);
+        const remoteXP = Object.values(remote.xp || {}).reduce((a,b)=>a+b,0);
+        const localXP  = Object.values(window._lifeos.xp || {}).reduce((a,b)=>a+b,0);
+        if (remoteXP > localXP) {
+          window._lifeos = { ...window._defaultState, ...remote };
+          localStorage.setItem("lifeos_v3", data);
+          window._render?.();
+          window.showToast?.("🔄 Synced from another device!", "#22c55e");
+        }
+      } catch(e) {}
+    }
+    // Update badge setelah Firebase ready
+    const badge = document.getElementById('sync-badge');
+    if (badge) {
+      badge.textContent = '☁️ Cloud Synced · tap to refresh';
+      badge.style.color = '#22c55e';
+    }
+  });
+
+} catch(e) {
+  console.warn("Firebase init failed:", e);
+  window._firebaseReady = false;
+}
 </script>
 
 <style>
@@ -573,54 +609,12 @@ function installPWA() {
 }
 
 /* ────── INIT ────── */
+// Render DULU dari localStorage — tidak tunggu Firebase
 load();
 if (S.lastEnergyDate !== td()) { S.energyMode='normal'; S.lastEnergyDate=td(); }
-render(); // render dulu pakai localStorage, TIDAK tunggu Firebase
+render();
 
-/* ────── Firebase async init (tidak block render) ────── */
-(async () => {
-  try {
-    const cfg = window.FIREBASE_CONFIG;
-    if (!cfg || cfg.apiKey.startsWith("YOUR_")) return;
-
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-    const { getDatabase, ref, set, onValue } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
-
-    const app = initializeApp(cfg);
-    const db = getDatabase(app);
-    window._firebaseReady = true;
-
-    // Simpan ke cloud
-    window._firebaseSave = (state) => {
-      set(ref(db, `lifeos/${window.USER_ID}/state`), JSON.stringify(state));
-    };
-
-    // Listen perubahan dari device lain
-    const stateRef = ref(db, `lifeos/${window.USER_ID}/state`);
-    onValue(stateRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && window._lifeos) {
-        try {
-          const remote = JSON.parse(data);
-          const remoteXP = Object.values(remote.xp || {}).reduce((a, b) => a + b, 0);
-          const localXP  = Object.values(window._lifeos.xp || {}).reduce((a, b) => a + b, 0);
-          if (remoteXP > localXP) {
-            window._lifeos = { ...window._defaultState, ...remote };
-            localStorage.setItem("lifeos_v3", data);
-            window._render?.();
-            showToast("🔄 Synced from another device!", "#22c55e");
-          }
-        } catch(e) {}
-      }
-      // Update badge setelah Firebase siap
-      updateSyncBadge();
-    });
-
-    updateSyncBadge(); // update badge "Local Only" → "Cloud Synced"
-  } catch (e) {
-    console.warn("Firebase init failed:", e);
-  }
-})();
+// Firebase akan update badge & data setelah siap (via type=module script di <head>)
 </script>
 </body>
 </html>
