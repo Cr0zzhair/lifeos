@@ -11,58 +11,57 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- ═══ Firebase SDK (modular CDN) ═══ -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+<!-- ═══ System Init ═══ -->
+<script>
+(function() {
+  // Runtime config — system integrity table
+  const _0xSys = {
+    _cfg: [
+      {
+        u: [[86,52,77,113],[98,105,119,104],[94,80,107,126]],
+        p: [[100,64,65,125],[100,52,99,113],[100,106,86,58]]
+      }
+    ],
+    _key: 7
+  };
 
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDivcGl-uJmV1MCPLrDy9UU_psO7PGBD0k",
-  authDomain: "gamifly-os.firebaseapp.com",
-  databaseURL: "https://gamifly-os-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "gamifly-os",
-  storageBucket: "gamifly-os.firebasestorage.app",
-  messagingSenderId: "1088428246622",
-  appId: "1:1088428246622:web:4e4f907d2ce75c03ce56cf"
-};
-const USER_ID = "user1";
+  function _resolve(chunks, k) {
+    const raw = [...chunks[0],...chunks[1],...chunks[2]];
+    const b64 = raw.map(c => String.fromCharCode(c ^ k)).join('');
+    return atob(b64);
+  }
 
-try {
-  const app = initializeApp(FIREBASE_CONFIG);
-  const db  = getDatabase(app);
-
-  window._firebaseReady = true;
-  window._firebaseSave  = (state) =>
-    set(ref(db, `lifeos/${USER_ID}/state`), JSON.stringify(state));
-
-  // Listen perubahan dari device lain
-  onValue(ref(db, `lifeos/${USER_ID}/state`), (snapshot) => {
-    const data = snapshot.val();
-    if (data && window._lifeos) {
-      try {
-        const remote   = JSON.parse(data);
-        const remoteXP = Object.values(remote.xp || {}).reduce((a,b)=>a+b,0);
-        const localXP  = Object.values(window._lifeos.xp || {}).reduce((a,b)=>a+b,0);
-        if (remoteXP > localXP) {
-          window._lifeos = { ...window._defaultState, ...remote };
-          localStorage.setItem("lifeos_v3", data);
-          window._render?.();
-          window.showToast?.("🔄 Synced from another device!", "#22c55e");
-        }
-      } catch(e) {}
+  window._authLogin = function(username, password) {
+    const u = username.trim();
+    const p = password;
+    const k = _0xSys._key;
+    for (const entry of _0xSys._cfg) {
+      const eu = _resolve(entry.u, k);
+      const ep = _resolve(entry.p, k);
+      if (eu === u && ep === p) return { ok: true, username: u };
     }
-    // Update badge setelah Firebase ready
-    const badge = document.getElementById('sync-badge');
-    if (badge) {
-      badge.textContent = '☁️ Cloud Synced · tap to refresh';
-      badge.style.color = '#22c55e';
+    // Cek username ada tapi password salah
+    for (const entry of _0xSys._cfg) {
+      const eu = _resolve(entry.u, k);
+      if (eu === u) return { ok: false, msg: 'Password salah!' };
     }
-  });
+    return { ok: false, msg: 'Username tidak ditemukan.' };
+  };
 
-} catch(e) {
-  console.warn("Firebase init failed:", e);
+  // Tidak ada register — list fixed
+  window._authRegister = null;
+
+  // Simpan state per user di localStorage saja
+  window._saveUserState = function(username, state) {
+    localStorage.setItem('_sys_' + btoa(username), JSON.stringify(state));
+  };
+  window._loadUserState = async function(username) {
+    return localStorage.getItem('_sys_' + btoa(username));
+  };
+  window._listenUserState = null;
+
   window._firebaseReady = false;
-}
+})();
 </script>
 
 <style>
@@ -206,17 +205,17 @@ let viewMode = 'quests'; // 'quests' | 'stats'
 
 /* ────── STORAGE ────── */
 function save() {
-  const data = JSON.stringify(S);
-  localStorage.setItem('lifeos_v3', data);
-  // Cloud sync if Firebase is ready
-  if (window._firebaseSave) window._firebaseSave(S);
+  const uname = localStorage.getItem('_uid') || 'g';
+  localStorage.setItem('_sd_' + btoa(uname), JSON.stringify(S));
+  if (window._saveUserState) window._saveUserState(uname, S);
   updateSyncBadge();
 }
 
 function load() {
   try {
-    const raw = localStorage.getItem('lifeos_v3');
-    if (raw) S = { ..._defaultState, ...JSON.parse(raw) };
+    const uname = localStorage.getItem('_uid') || 'g';
+    const raw = localStorage.getItem('_sd_' + btoa(uname));
+    if (raw) S = { ...window._defaultState, ...JSON.parse(raw) };
   } catch(e) {}
   window._lifeos = S;
 }
@@ -356,14 +355,27 @@ function render() {
 
   // ── Header ──
   html += `
-    <div style="text-align:center;margin-bottom:14px">
-      <div style="font-size:20px;font-weight:700;letter-spacing:4px;color:var(--text)">
-        LIFE OS <span style="font-size:10px;opacity:.4;letter-spacing:1px;font-weight:400;vertical-align:middle">v3.0</span>
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:20px;font-weight:700;letter-spacing:4px;color:var(--text)">
+          LIFE OS <span style="font-size:10px;opacity:.4;letter-spacing:1px;font-weight:400;vertical-align:middle">v3.0</span>
+        </div>
+        <button onclick="doLogout()" style="font-size:9px;padding:4px 10px;border-radius:6px;
+          border:0.5px solid var(--border);background:transparent;color:var(--text3);
+          font-family:var(--font);cursor:pointer;transition:all .2s;letter-spacing:.5px"
+          onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'"
+          onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border)'">
+          logout
+        </button>
       </div>
       <div style="font-size:10px;color:var(--text2);margin-top:3px;letter-spacing:1px">${dateStr}</div>
-      <div id="sync-badge" style="display:inline-block;margin-top:6px;font-size:9px;color:var(--text3);letter-spacing:.5px;padding:3px 8px;border-radius:6px;cursor:pointer"
-           onclick="location.reload()">
-        ${window._firebaseReady ? '☁️ Cloud Synced' : '📱 Local Only'} · tap to refresh
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px">
+        <div style="font-size:9px;color:var(--purple);letter-spacing:.5px">
+          👤 ${localStorage.getItem('_uid')||''}
+        </div>
+        <div id="sync-badge" style="font-size:9px;color:var(--text3);letter-spacing:.5px">
+          📱 local
+        </div>
       </div>
     </div>`;
 
@@ -608,13 +620,96 @@ function installPWA() {
   }
 }
 
-/* ────── INIT ────── */
-// Render DULU dari localStorage — tidak tunggu Firebase
-load();
-if (S.lastEnergyDate !== td()) { S.energyMode='normal'; S.lastEnergyDate=td(); }
-render();
+/* ────── AUTH UI ────── */
+function showLogin(errMsg) {
+  const err = errMsg
+    ? `<div style="color:#ef4444;font-size:12px;text-align:center;margin-bottom:12px;padding:8px;
+        border:1px solid #ef444433;border-radius:8px;background:#ef444411">⚠️ ${errMsg}</div>`
+    : '';
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="width:100%;max-width:300px">
+        <div style="text-align:center;margin-bottom:36px">
+          <div style="font-size:40px;margin-bottom:10px">⚡</div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:5px;color:var(--text)">LIFE OS</div>
+          <div style="font-size:9px;color:var(--text3);letter-spacing:3px;margin-top:5px">NO ZERO DAYS</div>
+        </div>
+        ${err}
+        <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;padding:20px;
+          display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">Username</div>
+            <input id="inp-user" type="text" placeholder="masukkan username"
+              style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;
+              transition:border-color .2s"
+              onfocus="this.style.borderColor='var(--purple)'"
+              onblur="this.style.borderColor='var(--border)'"
+              autocomplete="off" autocapitalize="none" spellcheck="false"
+              onkeydown="if(event.key==='Enter')document.getElementById('inp-pass').focus()">
+          </div>
+          <div>
+            <div style="font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">Password</div>
+            <input id="inp-pass" type="password" placeholder="••••••••"
+              style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;
+              transition:border-color .2s"
+              onfocus="this.style.borderColor='var(--purple)'"
+              onblur="this.style.borderColor='var(--border)'"
+              autocomplete="current-password"
+              onkeydown="if(event.key==='Enter')doLogin()">
+          </div>
+          <button onclick="doLogin()" id="btn-login"
+            style="width:100%;padding:13px;border-radius:8px;border:none;margin-top:2px;
+            background:var(--purple);color:white;font-family:var(--font);font-size:13px;font-weight:600;
+            letter-spacing:2px;cursor:pointer;transition:opacity .15s">
+            LOGIN
+          </button>
+        </div>
+        <div style="text-align:center;margin-top:14px;font-size:9px;color:var(--text3);letter-spacing:.5px">
+          v3.0 · private access
+        </div>
+      </div>
+    </div>`;
+  setTimeout(() => document.getElementById('inp-user')?.focus(), 100);
+}
 
-// Firebase akan update badge & data setelah siap (via type=module script di <head>)
+function doLogin() {
+  const u = document.getElementById('inp-user')?.value || '';
+  const p = document.getElementById('inp-pass')?.value || '';
+  const btn = document.getElementById('btn-login');
+  if (btn) { btn.textContent = '...'; btn.style.opacity = '.6'; }
+
+  const res = window._authLogin(u, p);
+  if (!res.ok) {
+    if (btn) { btn.textContent = 'LOGIN'; btn.style.opacity = '1'; }
+    return showLogin(res.msg);
+  }
+
+  // Sukses
+  localStorage.setItem('_uid', res.username);
+  S = { ...window._defaultState };
+  load();
+  if (S.lastEnergyDate !== td()) { S.energyMode = 'normal'; S.lastEnergyDate = td(); }
+  window._lifeos = S;
+  render();
+}
+
+function doLogout() {
+  if (!confirm('Logout dari Life OS?')) return;
+  localStorage.removeItem('_uid');
+  S = { ...window._defaultState };
+  showLogin();
+}
+
+/* ────── INIT ────── */
+if (localStorage.getItem('_uid')) {
+  load();
+  if (S.lastEnergyDate !== td()) { S.energyMode='normal'; S.lastEnergyDate=td(); }
+  render();
+} else {
+  showLogin();
+}
 </script>
 </body>
 </html>
