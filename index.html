@@ -11,10 +11,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- ═══ System Init ═══ -->
+<!-- ═══ System Init + Firebase Sync ═══ -->
 <script>
+// Auth — hardcode obfuscated
 (function() {
-  // Runtime config — system integrity table
   const _0xSys = {
     _cfg: [
       {
@@ -33,35 +33,65 @@
 
   window._authLogin = function(username, password) {
     const u = username.trim();
-    const p = password;
     const k = _0xSys._key;
     for (const entry of _0xSys._cfg) {
       const eu = _resolve(entry.u, k);
       const ep = _resolve(entry.p, k);
-      if (eu === u && ep === p) return { ok: true, username: u };
+      if (eu === u && ep === password) return { ok: true, username: u };
     }
-    // Cek username ada tapi password salah
     for (const entry of _0xSys._cfg) {
-      const eu = _resolve(entry.u, k);
-      if (eu === u) return { ok: false, msg: 'Password salah!' };
+      if (_resolve(entry.u, k) === u) return { ok: false, msg: 'Password salah!' };
     }
     return { ok: false, msg: 'Username tidak ditemukan.' };
   };
 
-  // Tidak ada register — list fixed
-  window._authRegister = null;
-
-  // Simpan state per user di localStorage saja
-  window._saveUserState = function(username, state) {
-    localStorage.setItem('_sys_' + btoa(username), JSON.stringify(state));
-  };
-  window._loadUserState = async function(username) {
-    return localStorage.getItem('_sys_' + btoa(username));
-  };
-  window._listenUserState = null;
-
   window._firebaseReady = false;
 })();
+</script>
+
+<!-- ═══ Firebase SDK (untuk sync antar device) ═══ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDivcGl-uJmV1MCPLrDy9UU_psO7PGBD0k",
+  authDomain: "gamifly-os.firebaseapp.com",
+  databaseURL: "https://gamifly-os-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "gamifly-os",
+  storageBucket: "gamifly-os.firebasestorage.app",
+  messagingSenderId: "1088428246622",
+  appId: "1:1088428246622:web:4e4f907d2ce75c03ce56cf"
+};
+
+try {
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db  = getDatabase(app);
+  window._firebaseReady = true;
+
+  // Simpan state user ke Firebase path per-username
+  window._saveUserState = (username, state) => {
+    set(ref(db, `lifeos_users/${username}/state`), JSON.stringify(state));
+  };
+
+  // Load sekali saat login
+  window._loadUserState = async (username) => {
+    const snap = await get(ref(db, `lifeos_users/${username}/state`));
+    return snap.exists() ? snap.val() : null;
+  };
+
+  // Realtime listener untuk sync antar device
+  window._listenUserState = (username, callback) => {
+    onValue(ref(db, `lifeos_users/${username}/state`), (snap) => {
+      if (snap.exists()) callback(snap.val());
+    });
+  };
+
+  console.log('✅ Firebase sync ready');
+} catch(e) {
+  console.warn('Firebase sync failed:', e);
+  window._firebaseReady = false;
+}
 </script>
 
 <style>
@@ -205,17 +235,18 @@ let viewMode = 'quests'; // 'quests' | 'stats'
 
 /* ────── STORAGE ────── */
 function save() {
-  const uname = localStorage.getItem('_uid') || 'g';
-  localStorage.setItem('_sd_' + btoa(uname), JSON.stringify(S));
+  const uname = localStorage.getItem('_uid') || 'guest';
+  const data  = JSON.stringify(S);
+  localStorage.setItem('_sd_' + btoa(uname), data);
   if (window._saveUserState) window._saveUserState(uname, S);
   updateSyncBadge();
 }
 
 function load() {
   try {
-    const uname = localStorage.getItem('_uid') || 'g';
-    const raw = localStorage.getItem('_sd_' + btoa(uname));
-    if (raw) S = { ...window._defaultState, ...JSON.parse(raw) };
+    const uname = localStorage.getItem('_uid') || 'guest';
+    const raw   = localStorage.getItem('_sd_' + btoa(uname));
+    if (raw) S  = { ...window._defaultState, ...JSON.parse(raw) };
   } catch(e) {}
   window._lifeos = S;
 }
@@ -373,8 +404,9 @@ function render() {
         <div style="font-size:9px;color:var(--purple);letter-spacing:.5px">
           👤 ${localStorage.getItem('_uid')||''}
         </div>
-        <div id="sync-badge" style="font-size:9px;color:var(--text3);letter-spacing:.5px">
-          📱 local
+        <div id="sync-badge" style="font-size:9px;color:var(--text3);cursor:pointer;letter-spacing:.5px"
+          onclick="location.reload()">
+          ${window._firebaseReady ? '☁️ Cloud Synced' : '📱 Local Only'} · tap to refresh
         </div>
       </div>
     </div>`;
@@ -641,8 +673,7 @@ function showLogin(errMsg) {
             <div style="font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">Username</div>
             <input id="inp-user" type="text" placeholder="masukkan username"
               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
-              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;
-              transition:border-color .2s"
+              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;transition:border-color .2s"
               onfocus="this.style.borderColor='var(--purple)'"
               onblur="this.style.borderColor='var(--border)'"
               autocomplete="off" autocapitalize="none" spellcheck="false"
@@ -652,8 +683,7 @@ function showLogin(errMsg) {
             <div style="font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">Password</div>
             <input id="inp-pass" type="password" placeholder="••••••••"
               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
-              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;
-              transition:border-color .2s"
+              padding:11px 13px;font-family:var(--font);font-size:13px;color:var(--text);outline:none;transition:border-color .2s"
               onfocus="this.style.borderColor='var(--purple)'"
               onblur="this.style.borderColor='var(--border)'"
               autocomplete="current-password"
@@ -674,9 +704,9 @@ function showLogin(errMsg) {
   setTimeout(() => document.getElementById('inp-user')?.focus(), 100);
 }
 
-function doLogin() {
-  const u = document.getElementById('inp-user')?.value || '';
-  const p = document.getElementById('inp-pass')?.value || '';
+async function doLogin() {
+  const u   = document.getElementById('inp-user')?.value || '';
+  const p   = document.getElementById('inp-pass')?.value || '';
   const btn = document.getElementById('btn-login');
   if (btn) { btn.textContent = '...'; btn.style.opacity = '.6'; }
 
@@ -686,13 +716,53 @@ function doLogin() {
     return showLogin(res.msg);
   }
 
-  // Sukses
+  // Auth sukses — set user
   localStorage.setItem('_uid', res.username);
   S = { ...window._defaultState };
+
+  // Load dari localStorage dulu (instant)
   load();
   if (S.lastEnergyDate !== td()) { S.energyMode = 'normal'; S.lastEnergyDate = td(); }
   window._lifeos = S;
   render();
+
+  // Lalu sync dari Firebase (background)
+  if (window._loadUserState) {
+    const raw = await window._loadUserState(res.username);
+    if (raw) {
+      try {
+        const remote   = JSON.parse(raw);
+        const remoteXP = Object.values(remote.xp||{}).reduce((a,b)=>a+b,0);
+        const localXP  = Object.values(S.xp||{}).reduce((a,b)=>a+b,0);
+        if (remoteXP > localXP) {
+          S = { ...window._defaultState, ...remote };
+          window._lifeos = S;
+          localStorage.setItem('_sd_' + btoa(res.username), raw);
+          render();
+          showToast('☁️ Data synced from cloud!', '#22c55e');
+        }
+      } catch(e) {}
+    }
+  }
+
+  // Realtime listener — sync perubahan dari device lain
+  if (window._listenUserState) {
+    window._listenUserState(res.username, (raw) => {
+      try {
+        const remote   = JSON.parse(raw);
+        const remoteXP = Object.values(remote.xp||{}).reduce((a,b)=>a+b,0);
+        const localXP  = Object.values(window._lifeos?.xp||{}).reduce((a,b)=>a+b,0);
+        if (remoteXP > localXP) {
+          S = { ...window._defaultState, ...remote };
+          window._lifeos = S;
+          localStorage.setItem('_sd_' + btoa(res.username), raw);
+          window._render?.();
+          showToast('🔄 Synced from another device!', '#22c55e');
+        }
+      } catch(e) {}
+      updateSyncBadge();
+    });
+  }
 }
 
 function doLogout() {
@@ -703,10 +773,48 @@ function doLogout() {
 }
 
 /* ────── INIT ────── */
-if (localStorage.getItem('_uid')) {
+const _savedUser = localStorage.getItem('_uid');
+if (_savedUser) {
+  // Auto-login
   load();
   if (S.lastEnergyDate !== td()) { S.energyMode='normal'; S.lastEnergyDate=td(); }
   render();
+  // Sync Firebase di background
+  setTimeout(async () => {
+    if (window._loadUserState) {
+      const raw = await window._loadUserState(_savedUser);
+      if (raw) {
+        try {
+          const remote   = JSON.parse(raw);
+          const remoteXP = Object.values(remote.xp||{}).reduce((a,b)=>a+b,0);
+          const localXP  = Object.values(S.xp||{}).reduce((a,b)=>a+b,0);
+          if (remoteXP > localXP) {
+            S = { ...window._defaultState, ...remote };
+            window._lifeos = S;
+            localStorage.setItem('_sd_' + btoa(_savedUser), raw);
+            render();
+            showToast('☁️ Synced from cloud!', '#22c55e');
+          }
+        } catch(e) {}
+      }
+    }
+    if (window._listenUserState) {
+      window._listenUserState(_savedUser, (raw) => {
+        try {
+          const remote   = JSON.parse(raw);
+          const remoteXP = Object.values(remote.xp||{}).reduce((a,b)=>a+b,0);
+          const localXP  = Object.values(window._lifeos?.xp||{}).reduce((a,b)=>a+b,0);
+          if (remoteXP > localXP) {
+            S = { ...window._defaultState, ...remote };
+            window._lifeos = S;
+            render();
+            showToast('🔄 Synced!', '#22c55e');
+          }
+        } catch(e) {}
+        updateSyncBadge();
+      });
+    }
+  }, 2000);
 } else {
   showLogin();
 }
