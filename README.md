@@ -127,3 +127,5 @@ Kalau mau upgrade ke auth yang proper → pelajari **Firebase Auth** atau **back
 **Crozzhair** — IT student, belajar cybersecurity & backend.
 
 > *"The secret of getting ahead is getting started."*
+
+Trash
