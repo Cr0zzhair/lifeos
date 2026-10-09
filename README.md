@@ -112,15 +112,7 @@ Kalau mau upgrade ke auth yang proper → pelajari **Firebase Auth** atau **back
 
 ---
 
-## Roadmap
 
-- [ ] Tambah custom quest (user-defined)
-- [ ] Export data ke CSV
-- [ ] Dark/light theme toggle
-- [ ] Notifikasi reminder harian
-- [ ] Backend auth dengan JWT
-
----
 
 ## Author
 
